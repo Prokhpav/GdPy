@@ -3,7 +3,18 @@ from typing import *
 from collections.abc import Iterable, Iterator, Callable
 import recognizing
 
-SzrCallable = Callable[[Any], Any]
+__all__ = (
+    'Base',
+    'Sequence',
+    'Key',
+    'Func',
+    'FieldBase',
+    'DictFields',
+    'FieldOptimazable',
+    'DictFieldsOptimized',
+    'ToClass',
+    'SerializingFamily'
+)
 
 _Missed = object()
 
@@ -161,7 +172,7 @@ class DictFields(Base):
 
 
 @define
-class FieldCommon(FieldBase):
+class FieldOptimazable(FieldBase):
     """
     This field can be optimized in DictFieldsOptimized - if there are no keys of
         the field.get_keys() in the data, the field's value will not be calculated.
@@ -187,9 +198,9 @@ class DictFieldsOptimized(Base):
     fields: tuple[FieldBase, ...]
     unused: FieldBase | None
     unoptimized_fields: tuple[FieldBase, ...]
-    optimized_fields: tuple[FieldCommon, ...]
-    from_key: dict[str, FieldCommon]
-    from_name: dict[str, FieldCommon]
+    optimized_fields: tuple[FieldOptimazable, ...]
+    from_key: dict[str, FieldOptimazable]
+    from_name: dict[str, FieldOptimazable]
 
     def __init__(self,
                  fields: tuple[FieldBase, ...],
@@ -197,9 +208,9 @@ class DictFieldsOptimized(Base):
                  ):
         self.fields = fields
         self.unused = unused
-        self.unoptimized_fields = tuple(field_ for field_ in fields if not isinstance(field_, FieldCommon))
-        self.optimized_fields = tuple(field_ for field_ in fields if isinstance(field_, FieldCommon))
-        self.from_key: dict[str, FieldCommon] = {}
+        self.unoptimized_fields = tuple(field_ for field_ in fields if not isinstance(field_, FieldOptimazable))
+        self.optimized_fields = tuple(field_ for field_ in fields if isinstance(field_, FieldOptimazable))
+        self.from_key: dict[str, FieldOptimazable] = {}
         self.from_name = {}
         for field_ in self.optimized_fields:
             for key in field_.get_keys():
@@ -267,3 +278,26 @@ class ToClass(Base):
         if self.has_dict:
             return value.__dict__
         return {name: getattr(value, name) for name in value.__class__.__slots__}
+
+
+@define
+class SerializingFamily:
+    _dct: dict[Any, Base | Any] = field(init=False, factory=dict)
+    _all: ClassVar[dict[str, 'SerializingFamily']] = {}
+
+    def __getitem__(self, key) -> Base | Any:
+        return self._dct[key]
+
+    def __setitem__(self, key, value):
+        self._dct[key] = value
+
+    @classmethod
+    def register(cls, name) -> 'SerializingFamily':
+        assert name not in cls._all
+        s = cls._all[name] = SerializingFamily()
+        return s
+
+    @classmethod
+    def get(cls, name) -> 'SerializingFamily':
+        return cls._all[name]
+

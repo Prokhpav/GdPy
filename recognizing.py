@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from typing import Any
-from python.tools import attrs_init_only
+from python.attrs_wrap import attrs_init_only
 
 _Missed = object()
 

@@ -1,21 +1,13 @@
-from attrs import define as attrs_init_only  # trick PyCharm
-from functools import partial
+def pairs2dict(pairs):
+    i = iter(pairs)
+    return dict(zip(i, i))
 
-attrs_init_only = partial(
-    attrs_init_only,
-    repr=False,
-    unsafe_hash=False,
-    hash=False,
-    init=True,
-    slots=False,
-    eq=False,
-    getstate_setstate=False,
-    match_args=False
-)
+def dict2pairs(d):
+    return (x for pair in d.items() for x in pair)
 
 
 def map_default(target_func, map_func):
-    # for all default values name=default in target_func replaces default to map_func(name, default)
+    """ for all default values name=default in target_func replaces default to map_func(name, default) """
     pos_defaults = target_func.__defaults__
     kw_defaults = target_func.__kwdefaults__
     pos_defaults = pos_defaults if pos_defaults is not None else ()

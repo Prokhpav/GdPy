@@ -3,7 +3,7 @@ from typing import Any, Callable, ClassVar, TYPE_CHECKING, TypeVar
 from attr import Attribute
 from attrs import define, field, NOTHING, Factory
 
-from python.tools import map_default
+from tools.funcs import map_default
 from python.named_const import Missed
 from context import Contextable
 
