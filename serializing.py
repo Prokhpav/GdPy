@@ -1,17 +1,22 @@
+from types import EllipsisType
+from typing import Any, ClassVar, TYPE_CHECKING, Literal
+from attr import frozen
 from attrs import define, field
-from typing import *
-from collections.abc import Iterable, Iterator, Callable
-import recognizing
+from collections.abc import Iterator, Callable
+
+from tools.funcs import Factory, extract_unused, factorydict
 
 __all__ = (
     'Base',
     'Sequence',
     'Key',
     'Func',
-    'FieldBase',
-    'DictFields',
-    'FieldOptimazable',
-    'DictFieldsOptimized',
+    'DoNothing',
+    'List',
+    'WrapKeyInfo',
+    'WrapKeys',
+    'FieldInfo',
+    'MultiField',
     'ToClass',
     'SerializingFamily'
 )
@@ -132,132 +137,537 @@ class Func(Base):
         yield from self.keys
 
 
-class FieldBase:
-    """
-    Almost like serializer, but analyser also uses second argument mutation rather returning.
-    """
+class DoNothing(Base):
+    """ A serializer that... does nothing """
 
-    def analyse(self, data: dict, value: dict):
-        """ Extract information from data and add it to value """
-        raise NotImplementedError()
-
-    def compile(self, value: dict, data: dict):
-        """ Extract information from value and add it to data """
-        raise NotImplementedError()
-
-    def get_keys(self) -> Iterator[str]:
-        yield from ()
-
-
-class DictFields(Base):
-    """
-    Applies each field to data, returns the resulting dict value.
-    """
-
-    def __init__(self, fields: tuple[FieldBase, ...]):
-        self.fields = fields
-
-    def analyze(self, data: dict):
-        value = {}
-        for field_ in self.fields:
-            field_.analyse(data, value)
-        return value
+    def analyze(self, data):
+        return data
 
     def compile(self, value, data=None):
-        if data is None:
-            data = {}
-        for field_ in self.fields:
-            field_.compile(value, data)
-        return data
+        return value
 
 
-@define
-class FieldOptimazable(FieldBase):
+class List(Base):
+    def __init__(self, serializer: Base):
+        self.serializer = serializer
+
+    def analyze(self, data):
+        return [self.serializer.analyze(dt) for dt in data]
+
+    def compile(self, value, data=None):
+        return [self.serializer.compile(val, data) for val in value]
+
+
+# class FieldBase:
+#     """
+#     Almost like serializer, but analyser also uses second argument mutation rather returning.
+#     """
+#
+#     def analyze(self, data: dict, value: dict):
+#         """ Extract information from data and add it to value """
+#         raise NotImplementedError()
+#
+#     def compile(self, value: dict, data: dict):
+#         """ Extract information from value and add it to data """
+#         raise NotImplementedError()
+#
+#     def get_keys(self) -> Iterator[str]:
+#         yield from ()
+#
+#
+# class Combinable(Base):
+#     def combine(self, other: Self) -> Self:
+#         raise NotImplementedError()
+#
+#
+# class DictFields(Base, Combinable):
+#     """
+#     Applies each field to data, returns the resulting dict value.
+#     """
+#
+#     def __init__(self, fields: tuple[FieldBase, ...]):
+#         self.fields = fields
+#
+#     def analyze(self, data: dict):
+#         value = {}
+#         for field_ in self.fields:
+#             field_.analyze(data, value)
+#         return value
+#
+#     def compile(self, value, data=None):
+#         if data is None:
+#             data = {}
+#         for field_ in self.fields:
+#             field_.compile(value, data)
+#         return data
+#
+#     def combine(self, other: Self) -> Self:
+#         return DictFields(self.fields + tuple(f for f in other.fields if f not in self.f))
+#
+#
+# @define
+# class FieldOptimazable(FieldBase):
+#     """
+#     This field can be optimized in DictFieldsOptimized - if there are no keys of
+#         the field.get_keys() in the data, the field's value will not be calculated.
+#     value[name] = serializer.analyse(data)
+#     """
+#     name: str
+#     serializer: Base
+#
+#     def analyze(self, data: dict, value: dict):
+#         val = self.serializer.analyze(data)
+#         if val is not None:
+#             value[self.name] = val
+#
+#     def compile(self, value: dict, data: dict):
+#         val = value.get(self.name, None)
+#         self.serializer.compile(val, data)
+#
+#     def get_keys(self) -> Iterator[str]:
+#         yield from self.serializer.get_keys()
+#
+#
+# class DictFieldsOptimized(DictFields):
+#     fields: tuple[FieldBase, ...]
+#     unused: FieldBase | None
+#     unoptimized_fields: tuple[FieldBase, ...]
+#     optimized_fields: tuple[FieldOptimazable, ...]
+#     from_key: dict[str, FieldOptimazable]
+#     from_name: dict[str, FieldOptimazable]
+#
+#     def __init__(self,
+#                  fields: tuple[FieldBase, ...],
+#                  unused: FieldBase | None = None
+#                  ):
+#         self.fields = fields
+#         self.unused = unused
+#         self.unoptimized_fields = tuple(field_ for field_ in fields if not isinstance(field_, FieldOptimazable))
+#         self.optimized_fields = tuple(field_ for field_ in fields if isinstance(field_, FieldOptimazable))
+#         self.from_key: dict[str, FieldOptimazable] = {}
+#         self.from_name = {}
+#         for field_ in self.optimized_fields:
+#             for key in field_.get_keys():
+#                 self.from_key[key] = field_
+#             self.from_name[field_.name] = field_
+#
+#     def analyze(self, data: dict):
+#         value = {}
+#         for field_ in self.unoptimized_fields:
+#             field_.analyze(data, value)
+#
+#         unused_keys = {}
+#         used_field_names = {}  # ordered set
+#         for key, val in data.items():
+#             if key in self.from_key:
+#                 used_field_names[self.from_key[key].name] = None
+#             elif self.unused is not None:
+#                 unused_keys[key] = val
+#
+#         for name in used_field_names:
+#             value[name] = self.from_name[name].serializer.analyze(data)
+#
+#         if unused_keys and self.unused is not None:
+#             self.unused.analyze(unused_keys, value)
+#
+#         return value
+#
+#     def compile(self, value: dict, data: dict = None):
+#         if data is None:
+#             data = {}
+#
+#         unused_keys = {}
+#         if self.unused is not None:
+#             self.unused.compile(value, unused_keys)
+#
+#         for name, val in value.items():
+#             if name in self.from_key:
+#                 self.from_name[name].serializer.compile(val, data)
+#
+#         for field_ in self.unoptimized_fields:
+#             field_.compile(value, data)
+#
+#         return data
+#
+#     def get_keys(self) -> Iterator[str]:
+#         for field_ in self.fields:
+#             yield from field_.get_keys()
+#
+#     def combine(self, other: Self) -> Self:
+#         return DictFieldsOptimized(self.fields + tuple(f for f in other.fields if f not in self.f))
+#
+#
+# class WrapKeyBase:
+#     def __init__(self,
+#                  old_key: str,
+#                  new_key: str,
+#                  serializer: FieldBase,
+#                  ):
+#         self.old_key = old_key
+#         self.new_key = new_key
+#         self.serializer = serializer
+#
+#
+# class DictFactory[KT, VT](dict[KT, VT]):
+#     def __init__(self, default_factory: 'Callable[[DictFactory, KT], VT]', **kwargs):
+#         super().__init__(**kwargs)
+#         self.default_factory = default_factory
+#
+#     def __missing__(self, key):
+#         return self.default_factory(self, key)
+#
+#
+# class WrapKeys(Base):
+#     def __init__(self, keys: tuple[WrapKeyBase]):
+#         self.keys = keys
+#         self.map_old_key: dict[str, WrapKeyBase] = {}
+#         self.map_new_key: dict[str, WrapKeyBase] = {}
+#         for key in self.keys:
+#             self.map_old_key[key.old_key] = key
+#             self.map_new_key[key.new_key] = key
+#
+#     def _missing(self, data: dict, key: str):
+#         return self.map_old_key[key].serializer.analyze(data, None)
+#
+#     def analyze(self, data: dict):
+#         value = DictFactory(self._missing)
+#         unused_keys = {}
+#         for key, val in data.items():
+#             if key in self.map_old_key:
+#                 info = self.map_old_key[key]
+#                 info.serializer.analyze(data, val)
+
+
+# class InheritableCombineSequence(Base, Combinable):
+#     def __init__(self,
+#                  handler: 'HierarchicalHandler',
+#                  serializers: tuple[Combinable, ...]
+#                  ):
+#         self.handler = handler
+#         self.serializers = serializers
+#
+#     def analyze(self, data):
+#         for szr in self.serializers:
+#             data = szr.analyze(data)
+#         return self.analyze(data)
+#
+#     def compile(self, value, data=None):
+#         for szr in self.serializers[::-1]:
+#             value = szr.compile(value, data)
+#         return value
+#
+#     def combine(self, other: Self) -> Self:
+#         assert self.handler == other.handler
+#         serializers = []
+#         for szr1, szr2 in zip(self.serializers, other.serializers, strict=True):
+#             serializers.append(szr1.combine(szr2))
+#         return InheritableCombineSequence(self.handler, serializers)
+#
+#
+# class HierarchicalHandler:
+#     def __init__(self):
+#         self.sequences: dict[type, InheritableCombineSequence] = {}
+#         self.serializers: dict[type, Base] = {}
+#
+#     def add(self,
+#             klass: type[object],
+#             *serializers: Combinable,
+#             ):
+
+
+@frozen
+class WrapKeyInfo:
     """
-    This field can be optimized in DictFieldsOptimized - if there are no keys of
-        the field.get_keys() in the data, the field's value will not be calculated.
-    value[name] = serializer.analyse(data)
+    Describes a translation between key in DATA and name in VALUE.
+    Behaviour is symmetrical by swapping key <-> name and value <-> data
+
+    The main relation is:
+        VALUE[name] = serializer.analyze(DATA[key])
+    It goes as far until an operation cannot be executed (no key or got None).
+
+    Checking None without memory optimization (optimize_key is None):
+        if key is not None and serializer is not None and key in DATA:
+            val = serializer.analyze(DATA[key])
+            if name is not None:
+                VALUE[name] = val
+
+    The full algorithm:
+        if key is not None and serializer is not None and key in DATA:
+            val = serializer.analyze(DATA[key])
+            if name is not None and (not optimize_name or val != default_value):
+                VALUE[name] = val
+        elif name is not None and optimize_name is False:
+            VALUE[name] = val
+
+    :param optimize_key: True/False/None - saving memory by not writing default to VALUE
+        None: doesn't affect the main algorithm.
+        True: checks value before saving to VALUE and prevents saving default_value
+        False: force to save default_value, event is the key don't exixst in DATA
+    :param default_value:
+    :param default_data:
+        If diven only one of defaults, the second will be generated using serializer if it is not None
+
+    Unused:
+        All unused keys from data are being collected to a single key Ellipsis: {...: {key: val}}
+
+    Usages:
+        (key, name, serializer) - standart translation between key and name
+        (key, None, serializer) - check DATA[key] using serializer.analyze
+        (key, None, default_data, optimize_key=False) - set default_data to key
+        (..., None, szr.Error)  - raise an error if there are any unsed key
     """
-    name: str
-    serializer: Base
+    key: str | EllipsisType | None
+    name: str | EllipsisType | None
+    serializer: Base | None
+    default_data: Any | Factory | None = None
+    default_value: Any | Factory | None = None
+    optimize_key: bool | None = None
+    optimize_name: bool | None = None
 
-    def analyse(self, data: dict, value: dict):
-        val = self.serializer.analyze(data)
-        if val is not None:
-            value[self.name] = val
+    if TYPE_CHECKING:  # for maker
+        def __init__(self,
+                     key: str | EllipsisType | None = None,
+                     name: str | EllipsisType | None = None,
+                     serializer: Base | None = None,
+                     default_data: Any | Factory | None = None,
+                     default_value: Any | Factory | None = None,
+                     optimize_key: bool | None = None,
+                     optimize_name: bool | None = None,
+                     ):
+            pass
 
-    def compile(self, value: dict, data: dict):
-        val = value.get(self.name, None)
-        self.serializer.compile(val, data)
+    def __attrs_post_init__(self):
+        if self.key is None and self.name is None:
+            raise TypeError("key and name cannot be both None")
+        if self.serializer is not None:
+            if self.default_value is None and self.default_data is not None:
+                object.__setattr__(self, 'default_value', Factory(self._default_value_factory))
+            if self.default_data is None and self.default_value is not None:
+                object.__setattr__(self, 'default_data', Factory(self._default_data_factory))
 
-    def get_keys(self) -> Iterator[str]:
-        yield from self.serializer.get_keys()
+    def _default_value_factory(self):
+        return self.serializer.analyze(self.default_data)
+
+    def _default_data_factory(self):
+        return self.serializer.compile(self.default_value)
 
 
-class DictFieldsOptimized(Base):
-    fields: tuple[FieldBase, ...]
-    unused: FieldBase | None
-    unoptimized_fields: tuple[FieldBase, ...]
-    optimized_fields: tuple[FieldOptimazable, ...]
-    from_key: dict[str, FieldOptimazable]
-    from_name: dict[str, FieldOptimazable]
+class WrapKeys(Base):
+    infos: tuple[WrapKeyInfo, ...]
 
-    def __init__(self,
-                 fields: tuple[FieldBase, ...],
-                 unused: FieldBase | None = None
-                 ):
-        self.fields = fields
-        self.unused = unused
-        self.unoptimized_fields = tuple(field_ for field_ in fields if not isinstance(field_, FieldOptimazable))
-        self.optimized_fields = tuple(field_ for field_ in fields if isinstance(field_, FieldOptimazable))
-        self.from_key: dict[str, FieldOptimazable] = {}
+    from_key: dict[str, WrapKeyInfo]
+    from_name: dict[str, WrapKeyInfo]
+    force_default_keys: dict[str, Any]
+    force_default_names: dict[str, Any]
+
+    def __init__(self, *infos: WrapKeyInfo):
+        self.infos = infos
+        self.from_key = {}
         self.from_name = {}
-        for field_ in self.optimized_fields:
-            for key in field_.get_keys():
-                self.from_key[key] = field_
-            self.from_name[field_.name] = field_
+        self.force_default_keys = {}
+        self.force_default_names = {}
+        for info in self.infos:
+            if info.name is not None:
+                if info.name in self.from_name:
+                    raise TypeError("name duplication")
+                self.from_name[info.name] = info
+            if info.key is not None:
+                if info.key in self.from_key:
+                    raise TypeError("key duplication")
+                self.from_key[info.key] = info
+            # optimization is False, force value to have defaults.
+            if info.name is not None and info.optimize_name is False:
+                self.force_default_names[info.name] = info
+            if info.key is not None and info.optimize_key is False:
+                self.force_default_keys[info.key] = info
+
+    def _missing_name(self, name):
+        if name in self.from_name:
+            info = self.from_name[name]
+            if info.default_value is not None:
+                return Factory.unwrap(info.default_value)
+        raise KeyError(name)
 
     def analyze(self, data: dict):
-        value = {}
-        for field_ in self.unoptimized_fields:
-            field_.analyse(data, value)
+        data, unused = extract_unused(data, self.from_key)
+        if Ellipsis in self.from_key:
+            data[Ellipsis] = unused
+        elif unused:
+            raise KeyError(unused)
 
-        unused_keys = {}
-        used_field_names = {}  # ordered set
+        value = factorydict(self._missing_name)
+
         for key, val in data.items():
-            if key in self.from_key:
-                used_field_names[self.from_key[key].name] = None
-            elif self.unused is not None:
-                unused_keys[key] = val
+            info = self.from_key[key]
+            if info.name is None:
+                if info.serializer is not None:
+                    info.serializer.analyze(val)
+                continue
 
-        for name in used_field_names:
-            value[name] = self.from_name[name].serializer.analyze(data)
+            if info.serializer is not None:
+                val = info.serializer.analyze(val)
+                if not info.optimize_name or val != Factory.unwrap(info.default_value):
+                    value[info.name] = val
+            elif info.optimize_name is False:
+                value[info.name] = Factory.unwrap(info.default_value)
+                continue
 
-        if unused_keys and self.unused is not None:
-            self.unused.analyse(unused_keys, value)
+        for name, info in self.force_default_names.items():
+            if name not in value:
+                value[name] = Factory.unwrap(info.default_value)
+
+        if Ellipsis in value:
+            value.update(value.pop(Ellipsis))
 
         return value
 
-    def compile(self, value: dict, data: dict = None):
-        if data is None:
-            data = {}
+    def _missing_key(self, key):
+        if key in self.from_key:
+            info = self.from_key[key]
+            if info.default_data is not None:
+                return Factory.unwrap(info.default_data)
+        raise KeyError(key)
 
-        unused_keys = {}
-        if self.unused is not None:
-            self.unused.compile(value, unused_keys)
+    def compile(self, value: dict, data=None):
+        value, unused = extract_unused(value, self.from_name)
+        if Ellipsis in self.from_name:
+            value[Ellipsis] = unused
+        elif unused:
+            raise KeyError(unused)
+
+        if data is not None:
+            raise TypeError()
+        data = factorydict(self._missing_key)
 
         for name, val in value.items():
-            if name in self.from_key:
-                self.from_name[name].serializer.compile(val, data)
+            info = self.from_name[name]
+            if info.key is None:
+                if info.serializer is not None:
+                    info.serializer.compile(val)
+                continue
 
-        for field_ in self.unoptimized_fields:
-            field_.compile(value, data)
+            if info.serializer is not None:
+                val = info.serializer.compile(val)
+                if not info.optimize_key or val != Factory.unwrap(info.default_data):
+                    data[info.key] = val
+            elif info.optimize_key is False:
+                data[info.key] = Factory.unwrap(info.default_data)
+                continue
+
+        for key, info in self.force_default_keys.items():
+            if key not in data:
+                data[key] = Factory.unwrap(info.default_data)
+
+        if Ellipsis in data:
+            data.update(data.pop(Ellipsis))
 
         return data
 
-    def get_keys(self) -> Iterator[str]:
-        for field_ in self.fields:
-            yield from field_.get_keys()
+    def combine(self, other: 'WrapKeys') -> 'WrapKeys':
+        infos = tuple(info for info in self.infos if (
+                (info.key is None or info.key not in other.from_key) and
+                (info.name is None or info.name not in other.from_name)
+        ))  # if key or name presents in other, the info will be overriden.
+        return WrapKeys(*infos, *other.infos)
+
+
+@frozen
+class FieldInfo:
+    name: str | EllipsisType
+    serializer: Base | None | Literal[True] = None
+    keys: tuple[str, ...] | None = None
+    optimize_name: bool = True
+
+    if TYPE_CHECKING:
+        def __init__(self,
+                     name: str | EllipsisType = None,
+                     serializer: Base | None | Literal[True] = None,
+                     keys: tuple[str, ...] | None = None,
+                     optimize_name: bool = True,
+                     ):
+            pass
+
+    def __attrs_post_init__(self):
+        if self.serializer is True:
+            object.__setattr__(self, 'serializer', Key(self.name))
+        if self.keys is None:
+            object.__setattr__(self, 'keys', tuple(self.serializer.get_keys()))
+
+
+class MultiField(Base):
+    infos: tuple[FieldInfo, ...]
+    from_key: dict[str, FieldInfo]
+    from_name: dict[str, FieldInfo]
+    force_default_names: dict[FieldInfo, None]  # ordered set
+
+    def __init__(self, *infos: FieldInfo):
+        self.infos = infos
+        self.from_key = {}
+        self.from_name = {}
+        self.force_default_names = {}
+        for info in self.infos:
+            if info.name is not None:
+                self.from_name[info.name] = info
+            for key in info.keys:
+                self.from_key[key] = info
+            if not info.optimize_name:
+                self.force_default_names[info] = None
+
+    def analyze(self, data: dict):
+        data, unused = extract_unused(data, self.from_key)
+        if Ellipsis in self.from_key:
+            data[Ellipsis] = unused
+        elif unused:
+            raise KeyError(unused)
+
+        value = {}
+
+        used_fields = dict(self.force_default_names)  # ordered set
+        for key in data:
+            used_fields[self.from_key[key]] = None
+
+        for info in used_fields:
+            if info.name is None:
+                if info.serializer is not None:
+                    info.serializer.analyze(data)
+                continue
+            if info.serializer is not None:
+                value[info.name] = info.serializer.analyze(data)
+
+        if Ellipsis in value:
+            value.update(value.pop(Ellipsis))
+
+        return value
+
+    def compile(self, value: dict, data=None):
+        value, unused = extract_unused(value, self.from_key)
+        if Ellipsis in self.from_key:
+            value[Ellipsis] = unused
+        elif unused:
+            raise KeyError(unused)
+
+        if data is None:
+            data = {}
+
+        used_fields = {}  # ordered set
+        for name in value:
+            used_fields[self.from_name[name]] = None
+
+        for info in used_fields:
+            if info.serializer is not None:
+                val = value.get(info.name)
+                info.serializer.compile(val, data)
+
+        if Ellipsis in data:
+            data.update(data.pop(Ellipsis))
+
+        return data
+
+    def combine(self, other: 'MultiField') -> 'MultiField':
+        infos = tuple(info for info in self.infos if (
+            (info.name is None or info.name not in other.from_name)
+        ))  # if name presents in other, the info will be overriden.
+        return MultiField(*infos, *other.infos)
 
 
 class ToClass(Base):
@@ -285,10 +695,10 @@ class SerializingFamily:
     _dct: dict[Any, Base | Any] = field(init=False, factory=dict)
     _all: ClassVar[dict[str, 'SerializingFamily']] = {}
 
-    def __getitem__(self, key) -> Base | Any:
+    def __getitem__(self, key) -> Base:
         return self._dct[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value: Base):
         self._dct[key] = value
 
     @classmethod
@@ -300,4 +710,3 @@ class SerializingFamily:
     @classmethod
     def get(cls, name) -> 'SerializingFamily':
         return cls._all[name]
-

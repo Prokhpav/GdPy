@@ -9,7 +9,7 @@ from data.special_ids import special_ids
 
 @define_gd
 class GdObjectBase(IgnoreDefault):
-    pos: Vector2 = field(factory=Vector2)
+    x: float
 
 
 @define_gd
