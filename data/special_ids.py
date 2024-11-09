@@ -73,7 +73,7 @@ from bidict import bidict
 #     3662: 'VisibilityLink',
 #     1815: 'Collision',
 #     3609: 'InstantCollision',
-#     3640: 'PlayerCollisionTrigger',
+#     3640: 'CollisionState',
 #     1816: 'CollisionBlock',
 #     3643: 'ToggleBlock',
 #     1812: 'OnDeath',
@@ -131,7 +131,7 @@ from bidict import bidict
 
 special_ids = bidict({
     # ----- objects behaviour
-    901: 'Move',
+    901: 'Move',  # +
     1346: 'Rotate',
     2067: 'Scale',
     1007: 'Alpha',
@@ -163,35 +163,34 @@ special_ids = bidict({
     1006: 'Pulse',
 
     # ----- control triggers
-    1049: 'Toggle',
-    1268: 'Spawn',
-    1616: 'Stop',
+    1049: 'Toggle',  # +
+    1268: 'Spawn',  # +
+    1616: 'Stop',  # +
     3607: 'Sequence',
     1912: 'Random',
     2068: 'AdvancedRandom',
     # ----- - item
-    1817: 'Pickup',
-    1611: 'Count',
-    1811: 'InstantCount',
+    1817: 'Pickup',  # +
+    1611: 'Count',  # +
+    1811: 'InstantCount',  # +
     3619: 'ItemEdit',
     3620: 'ItemCompare',
     3641: 'ItemPersistent',
-    1615: 'CounterLabel',
+    1615: 'CounterLabel',  # +
     # ----- - timer
     3614: 'Timer',
     3615: 'TimerEvent',
     3617: 'TimerControl',
     # ----- - player input
-    1595: 'Touch',
+    1595: 'Touch',  # +
     3604: 'PLayerEvent',
     1812: 'OnDeath',
     # ----- - collision
-    1815: 'Collision',
-    3609: 'InstantCollision',
-    3640: 'PlayerCollisionTrigger',
-    1816: 'CollisionBlock',
-    3643: 'ToggleBlock',
-    3618: 'ResetPickups',
+    1815: 'Collision',  # +
+    3609: 'InstantCollision',  # +
+    3640: 'CollisionState',  # +
+    1816: 'CollisionBlock',  # +
+    3643: 'ToggleBlock',  # +
 
     # ----- player behaviour
     31: 'StartPos',
@@ -276,4 +275,5 @@ special_ids = bidict({
     3642: 'GuideBPM',
     2903: 'Gradient',
     3608: 'SpawnParticles',
+    3618: 'Reset',  # +
 })

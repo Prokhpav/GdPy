@@ -13,6 +13,10 @@ class GdIdRef:
     type: ClassVar["GdIdType[Self]"] = field()
     ref: "GdId[Self]" = field()
 
+    if TYPE_CHECKING:
+        def __init__(self, value = None):
+            pass
+
     def __safe_init__(self, ref: "GdId[Self]"):
         """ I can't use __init__ because it's called after __new__ every time """
         self.ref = ref
@@ -38,7 +42,7 @@ class GdIdRef:
 
     def __repr__(self):
         name = self.__class__.__name__
-        module = GdModule.C(None)
+        module = GdModule.C()
         if module is None:
             return f'{name}()'
         val = module.ids[type(self)].values.get(self.ref, None)

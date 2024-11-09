@@ -54,6 +54,9 @@ class factorydict[KT, VT](dict[KT, VT]):
             raise KeyError(key)
         return self.default_factory(key)
 
+    def copy(self):
+        return factorydict(self.default_factory, self)
+
 
 class Factory[T]:
     __slots__ = ('factory',)
@@ -69,10 +72,3 @@ class Factory[T]:
 
     def __repr__(self):
         return f'Factory({self.factory!r})'
-
-
-def extract_unused(data, keys):
-    return (
-        {key: val for key, val in data.items() if key in keys},
-        {key: val for key, val in data.items() if key not in keys}
-    )

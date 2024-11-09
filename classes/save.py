@@ -1,6 +1,6 @@
 import copy
 from collections import deque
-from typing import overload, TypeVar, Iterator, Literal
+from typing import TypeVar, Iterator, Literal
 
 from attrs import define, field
 from contextlib import contextmanager
@@ -31,7 +31,7 @@ class LevelInfo(IgnoreDefault):
     @classmethod
     def LoadFromGMD(cls, data: bytes) -> 'LevelInfo':
         json_data = tools.plist.plist_to_json(data)
-        return S[LevelInfo].analyse(json_data)
+        return S[LevelInfo].analyze(json_data)
 
     def SaveToGMD(self) -> bytes:
         json_data = S[LevelInfo].compile(self)
@@ -69,8 +69,8 @@ class Level(Contextable, SimpleContext):
     module: GdModule
 
     @contextmanager
-    def __additional_context__(self):
-        with self.module:
+    def __context__(self):
+        with super().__context__(), self.module:
             yield self
 
 

@@ -81,7 +81,7 @@ class Tuple(Base):
     Applies each recognizer to the data and returns a tuple of results.
     """
 
-    def __init__(self, recognizers: tuple[Base, ...]):
+    def __init__(self, *recognizers: Base):
         self.recognizers = recognizers
 
     def __call__(self, data):

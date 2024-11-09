@@ -1,10 +1,11 @@
+from enum import Enum
 from types import EllipsisType
 from typing import Any, ClassVar, TYPE_CHECKING, Literal
 from attr import frozen
 from attrs import define, field
 from collections.abc import Iterator, Callable
 
-from tools.funcs import Factory, extract_unused, factorydict
+from tools.funcs import Factory, factorydict
 
 __all__ = (
     'Base',
@@ -13,11 +14,14 @@ __all__ = (
     'Func',
     'DoNothing',
     'List',
+    'Mapping',
+    'Tuple',
     'WrapKeyInfo',
     'WrapKeys',
     'FieldInfo',
     'MultiField',
     'ToClass',
+    'ToEnum',
     'SerializingFamily'
 )
 
@@ -26,7 +30,7 @@ _Missed = object()
 
 class Base:
     """
-    Two-way conversion. `analyse` and `compile` functions must be inverse to each other.
+    Two-way conversion. `analyze` and `compile` functions must be inverse to each other.
     However, some unnecessary information can be lost during the process.
     assert data ≈≈ compile(avalyse(data))
 
@@ -158,6 +162,47 @@ class List(Base):
         return [self.serializer.compile(val, data) for val in value]
 
 
+class Mapping(Base):
+    items: tuple[tuple[Any, Any], ...]
+
+    def __init__(self, *items: tuple[Any, Any]):
+        self.items = items
+        self._forward: dict = {}
+        self._backward: dict = {}
+        for a, b in self.items:
+            self._forward[a] = b
+            self._backward[b] = a
+
+    def analyze(self, data):
+        return self._forward[data]
+
+    def compile(self, value, data=None):
+        return self._backward[value]
+
+
+class Tuple(Base):
+    serializers: tuple[Base, ...]
+    iterate: bool
+
+    def __init__(self, *serializers: Base, iterate: bool = False):
+        self.serializers = serializers
+        self.iterate = iterate
+
+    def analyze(self, data):
+        if self.iterate:
+            return tuple(szr.analyze(dat) for szr, dat in zip(self.serializers, data, strict=True))
+        return tuple(szr.analyze(data) for szr in self.serializers)
+
+    def compile(self, value, data=None):
+        if self.iterate:
+            return tuple(szr.compile(val, data) for szr, val in zip(tuple(self.serializers), value, strict=True))
+        return tuple(szr.compile(value, data) for szr in self.serializers)
+
+    def get_keys(self) -> Iterator[str]:
+        for szr in self.serializers:
+            yield from szr.get_keys()
+
+
 # class FieldBase:
 #     """
 #     Almost like serializer, but analyser also uses second argument mutation rather returning.
@@ -210,7 +255,7 @@ class List(Base):
 #     """
 #     This field can be optimized in DictFieldsOptimized - if there are no keys of
 #         the field.get_keys() in the data, the field's value will not be calculated.
-#     value[name] = serializer.analyse(data)
+#     value[name] = serializer.analyze(data)
 #     """
 #     name: str
 #     serializer: Base
@@ -375,6 +420,17 @@ class List(Base):
 #             ):
 
 
+def extract_unused(data: dict, keys, insert_unused=False, unused_key=Ellipsis):
+    new_data = {key: val for key, val in data.items() if key in keys}
+    if isinstance(data, factorydict):
+        new_data = factorydict(data.default_factory, new_data)
+    if insert_unused:
+        unused = {key: val for key, val in data.items() if key not in keys}
+        if unused:
+            new_data[unused_key] = unused
+    return new_data
+
+
 @frozen
 class WrapKeyInfo:
     """
@@ -489,11 +545,7 @@ class WrapKeys(Base):
         raise KeyError(name)
 
     def analyze(self, data: dict):
-        data, unused = extract_unused(data, self.from_key)
-        if Ellipsis in self.from_key:
-            data[Ellipsis] = unused
-        elif unused:
-            raise KeyError(unused)
+        data = extract_unused(data, self.from_key, Ellipsis in self.from_key, Ellipsis)
 
         value = factorydict(self._missing_name)
 
@@ -529,11 +581,7 @@ class WrapKeys(Base):
         raise KeyError(key)
 
     def compile(self, value: dict, data=None):
-        value, unused = extract_unused(value, self.from_name)
-        if Ellipsis in self.from_name:
-            value[Ellipsis] = unused
-        elif unused:
-            raise KeyError(unused)
+        value = extract_unused(value, self.from_name, Ellipsis in self.from_name, Ellipsis)
 
         if data is not None:
             raise TypeError()
@@ -577,6 +625,7 @@ class FieldInfo:
     serializer: Base | None | Literal[True] = None
     keys: tuple[str, ...] | None = None
     optimize_name: bool = True
+    always_compile: bool = False
 
     if TYPE_CHECKING:
         def __init__(self,
@@ -584,6 +633,7 @@ class FieldInfo:
                      serializer: Base | None | Literal[True] = None,
                      keys: tuple[str, ...] | None = None,
                      optimize_name: bool = True,
+                     always_compile: bool = False
                      ):
             pass
 
@@ -599,12 +649,14 @@ class MultiField(Base):
     from_key: dict[str, FieldInfo]
     from_name: dict[str, FieldInfo]
     force_default_names: dict[FieldInfo, None]  # ordered set
+    always_compile: dict[FieldInfo, None]
 
     def __init__(self, *infos: FieldInfo):
         self.infos = infos
         self.from_key = {}
         self.from_name = {}
         self.force_default_names = {}
+        self.always_compile = {}
         for info in self.infos:
             if info.name is not None:
                 self.from_name[info.name] = info
@@ -612,13 +664,11 @@ class MultiField(Base):
                 self.from_key[key] = info
             if not info.optimize_name:
                 self.force_default_names[info] = None
+            if info.always_compile:
+                self.always_compile[info] = None
 
     def analyze(self, data: dict):
-        data, unused = extract_unused(data, self.from_key)
-        if Ellipsis in self.from_key:
-            data[Ellipsis] = unused
-        elif unused:
-            raise KeyError(unused)
+        data = extract_unused(data, self.from_key, Ellipsis in self.from_key, Ellipsis)
 
         value = {}
 
@@ -640,22 +690,18 @@ class MultiField(Base):
         return value
 
     def compile(self, value: dict, data=None):
-        value, unused = extract_unused(value, self.from_key)
-        if Ellipsis in self.from_key:
-            value[Ellipsis] = unused
-        elif unused:
-            raise KeyError(unused)
+        value = extract_unused(value, self.from_name, Ellipsis in self.from_name, Ellipsis)
 
         if data is None:
             data = {}
 
-        used_fields = {}  # ordered set
+        used_fields = dict(self.always_compile)  # ordered set
         for name in value:
             used_fields[self.from_name[name]] = None
 
         for info in used_fields:
             if info.serializer is not None:
-                val = value.get(info.name)
+                val = value.get(info.name, None)
                 info.serializer.compile(val, data)
 
         if Ellipsis in data:
@@ -668,6 +714,10 @@ class MultiField(Base):
             (info.name is None or info.name not in other.from_name)
         ))  # if name presents in other, the info will be overriden.
         return MultiField(*infos, *other.infos)
+
+    def get_keys(self) -> Iterator[str]:
+        for info in self.infos:
+            yield from info.keys
 
 
 class ToClass(Base):
@@ -688,6 +738,17 @@ class ToClass(Base):
         if self.has_dict:
             return value.__dict__
         return {name: getattr(value, name) for name in value.__class__.__slots__}
+
+
+class ToEnum(Base):
+    def __init__(self, klass: type[Enum]):
+        self.klass = klass
+
+    def analyze(self, data):
+        return self.klass(data)
+
+    def compile(self, value: Enum, data=None):
+        return value.value
 
 
 @define

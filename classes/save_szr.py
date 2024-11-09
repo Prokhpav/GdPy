@@ -5,8 +5,8 @@ from serializing import *
 from maker import Maker
 from tools.funcs import pairs_to_dict, dict_to_pairs, Factory
 import tools.decompressing
-from classes.gd_module import GdModule
-from classes.save import *
+from .gd_module import GdModule
+from .save import *
 
 S = SerializingFamily.get('save')
 

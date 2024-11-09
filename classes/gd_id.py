@@ -1,5 +1,14 @@
 from typing import Protocol, runtime_checkable
-from classes.gd_module import GdIdRef, GdIdType
+from .gd_module import GdIdRef, GdIdType
+
+__all__ = (
+    'GroupConvertible',
+    'Group',
+    'BlockConvertible',
+    'Block',
+    'ItemConvertible',
+    'Item',
+)
 
 
 @runtime_checkable
