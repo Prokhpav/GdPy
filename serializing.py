@@ -1,11 +1,12 @@
 from enum import Enum
+from functools import partial
 from types import EllipsisType
 from typing import Any, ClassVar, TYPE_CHECKING, Literal
 from attr import frozen
 from attrs import define, field
 from collections.abc import Iterator, Callable
 
-from tools.funcs import Factory, factorydict
+from tools.funcs import Factory, factorydict, pairs_to_dict, dict_to_pairs
 
 __all__ = (
     'Base',
@@ -16,11 +17,14 @@ __all__ = (
     'List',
     'Mapping',
     'Tuple',
+    'StrSplit',
+    'NameTuple',
     'WrapKeyInfo',
     'WrapKeys',
     'FieldInfo',
     'MultiField',
     'ToClass',
+    'ToAttrs',
     'ToEnum',
     'SerializingFamily'
 )
@@ -164,9 +168,23 @@ class List(Base):
 
 class Mapping(Base):
     items: tuple[tuple[Any, Any], ...]
+    default_value: Any = _Missed
+    default_value_keep: bool = False
+    default_data: Any = _Missed
+    default_data_keep: bool = False
 
-    def __init__(self, *items: tuple[Any, Any]):
+    def __init__(self,
+                 *items: tuple[Any, Any],
+                 default_value: Any = _Missed,
+                 default_value_keep: bool = False,
+                 default_data: Any = _Missed,
+                 default_data_keep: bool = False
+                 ):
         self.items = items
+        self.default_value = default_value
+        self.default_value_keep = default_value_keep
+        self.default_data = default_data
+        self.default_data_keep = default_data_keep
         self._forward: dict = {}
         self._backward: dict = {}
         for a, b in self.items:
@@ -174,9 +192,17 @@ class Mapping(Base):
             self._backward[b] = a
 
     def analyze(self, data):
+        if self.default_value is not _Missed:
+            return self._forward.get(data, self.default_value)
+        if self.default_value_keep:
+            return self._forward.get(data, data)
         return self._forward[data]
 
     def compile(self, value, data=None):
+        if self.default_data is not _Missed:
+            return self._backward.get(value, self.default_data)
+        if self.default_data_keep:
+            return self._backward.get(value, value)
         return self._backward[value]
 
 
@@ -194,230 +220,40 @@ class Tuple(Base):
         return tuple(szr.analyze(data) for szr in self.serializers)
 
     def compile(self, value, data=None):
-        if self.iterate:
-            return tuple(szr.compile(val, data) for szr, val in zip(tuple(self.serializers), value, strict=True))
-        return tuple(szr.compile(value, data) for szr in self.serializers)
+        # if self.iterate:
+        return tuple(szr.compile(val, data) for szr, val in zip(tuple(self.serializers), value, strict=True))
+        # return tuple(szr.compile(value, data) for szr in self.serializers)
 
     def get_keys(self) -> Iterator[str]:
         for szr in self.serializers:
             yield from szr.get_keys()
 
 
-# class FieldBase:
-#     """
-#     Almost like serializer, but analyser also uses second argument mutation rather returning.
-#     """
-#
-#     def analyze(self, data: dict, value: dict):
-#         """ Extract information from data and add it to value """
-#         raise NotImplementedError()
-#
-#     def compile(self, value: dict, data: dict):
-#         """ Extract information from value and add it to data """
-#         raise NotImplementedError()
-#
-#     def get_keys(self) -> Iterator[str]:
-#         yield from ()
-#
-#
-# class Combinable(Base):
-#     def combine(self, other: Self) -> Self:
-#         raise NotImplementedError()
-#
-#
-# class DictFields(Base, Combinable):
-#     """
-#     Applies each field to data, returns the resulting dict value.
-#     """
-#
-#     def __init__(self, fields: tuple[FieldBase, ...]):
-#         self.fields = fields
-#
-#     def analyze(self, data: dict):
-#         value = {}
-#         for field_ in self.fields:
-#             field_.analyze(data, value)
-#         return value
-#
-#     def compile(self, value, data=None):
-#         if data is None:
-#             data = {}
-#         for field_ in self.fields:
-#             field_.compile(value, data)
-#         return data
-#
-#     def combine(self, other: Self) -> Self:
-#         return DictFields(self.fields + tuple(f for f in other.fields if f not in self.f))
-#
-#
-# @define
-# class FieldOptimazable(FieldBase):
-#     """
-#     This field can be optimized in DictFieldsOptimized - if there are no keys of
-#         the field.get_keys() in the data, the field's value will not be calculated.
-#     value[name] = serializer.analyze(data)
-#     """
-#     name: str
-#     serializer: Base
-#
-#     def analyze(self, data: dict, value: dict):
-#         val = self.serializer.analyze(data)
-#         if val is not None:
-#             value[self.name] = val
-#
-#     def compile(self, value: dict, data: dict):
-#         val = value.get(self.name, None)
-#         self.serializer.compile(val, data)
-#
-#     def get_keys(self) -> Iterator[str]:
-#         yield from self.serializer.get_keys()
-#
-#
-# class DictFieldsOptimized(DictFields):
-#     fields: tuple[FieldBase, ...]
-#     unused: FieldBase | None
-#     unoptimized_fields: tuple[FieldBase, ...]
-#     optimized_fields: tuple[FieldOptimazable, ...]
-#     from_key: dict[str, FieldOptimazable]
-#     from_name: dict[str, FieldOptimazable]
-#
-#     def __init__(self,
-#                  fields: tuple[FieldBase, ...],
-#                  unused: FieldBase | None = None
-#                  ):
-#         self.fields = fields
-#         self.unused = unused
-#         self.unoptimized_fields = tuple(field_ for field_ in fields if not isinstance(field_, FieldOptimazable))
-#         self.optimized_fields = tuple(field_ for field_ in fields if isinstance(field_, FieldOptimazable))
-#         self.from_key: dict[str, FieldOptimazable] = {}
-#         self.from_name = {}
-#         for field_ in self.optimized_fields:
-#             for key in field_.get_keys():
-#                 self.from_key[key] = field_
-#             self.from_name[field_.name] = field_
-#
-#     def analyze(self, data: dict):
-#         value = {}
-#         for field_ in self.unoptimized_fields:
-#             field_.analyze(data, value)
-#
-#         unused_keys = {}
-#         used_field_names = {}  # ordered set
-#         for key, val in data.items():
-#             if key in self.from_key:
-#                 used_field_names[self.from_key[key].name] = None
-#             elif self.unused is not None:
-#                 unused_keys[key] = val
-#
-#         for name in used_field_names:
-#             value[name] = self.from_name[name].serializer.analyze(data)
-#
-#         if unused_keys and self.unused is not None:
-#             self.unused.analyze(unused_keys, value)
-#
-#         return value
-#
-#     def compile(self, value: dict, data: dict = None):
-#         if data is None:
-#             data = {}
-#
-#         unused_keys = {}
-#         if self.unused is not None:
-#             self.unused.compile(value, unused_keys)
-#
-#         for name, val in value.items():
-#             if name in self.from_key:
-#                 self.from_name[name].serializer.compile(val, data)
-#
-#         for field_ in self.unoptimized_fields:
-#             field_.compile(value, data)
-#
-#         return data
-#
-#     def get_keys(self) -> Iterator[str]:
-#         for field_ in self.fields:
-#             yield from field_.get_keys()
-#
-#     def combine(self, other: Self) -> Self:
-#         return DictFieldsOptimized(self.fields + tuple(f for f in other.fields if f not in self.f))
-#
-#
-# class WrapKeyBase:
-#     def __init__(self,
-#                  old_key: str,
-#                  new_key: str,
-#                  serializer: FieldBase,
-#                  ):
-#         self.old_key = old_key
-#         self.new_key = new_key
-#         self.serializer = serializer
-#
-#
-# class DictFactory[KT, VT](dict[KT, VT]):
-#     def __init__(self, default_factory: 'Callable[[DictFactory, KT], VT]', **kwargs):
-#         super().__init__(**kwargs)
-#         self.default_factory = default_factory
-#
-#     def __missing__(self, key):
-#         return self.default_factory(self, key)
-#
-#
-# class WrapKeys(Base):
-#     def __init__(self, keys: tuple[WrapKeyBase]):
-#         self.keys = keys
-#         self.map_old_key: dict[str, WrapKeyBase] = {}
-#         self.map_new_key: dict[str, WrapKeyBase] = {}
-#         for key in self.keys:
-#             self.map_old_key[key.old_key] = key
-#             self.map_new_key[key.new_key] = key
-#
-#     def _missing(self, data: dict, key: str):
-#         return self.map_old_key[key].serializer.analyze(data, None)
-#
-#     def analyze(self, data: dict):
-#         value = DictFactory(self._missing)
-#         unused_keys = {}
-#         for key, val in data.items():
-#             if key in self.map_old_key:
-#                 info = self.map_old_key[key]
-#                 info.serializer.analyze(data, val)
+class StrSplit(Base):
+    def __init__(self, separator: str | None = None):
+        self.separator = separator
+
+    def analyze(self, data):
+        return data.split(self.separator)
+
+    def compile(self, value, data=None):
+        if self.separator is not None:
+            return self.separator.join(value)
+        return ''.join(value)
 
 
-# class InheritableCombineSequence(Base, Combinable):
-#     def __init__(self,
-#                  handler: 'HierarchicalHandler',
-#                  serializers: tuple[Combinable, ...]
-#                  ):
-#         self.handler = handler
-#         self.serializers = serializers
-#
-#     def analyze(self, data):
-#         for szr in self.serializers:
-#             data = szr.analyze(data)
-#         return self.analyze(data)
-#
-#     def compile(self, value, data=None):
-#         for szr in self.serializers[::-1]:
-#             value = szr.compile(value, data)
-#         return value
-#
-#     def combine(self, other: Self) -> Self:
-#         assert self.handler == other.handler
-#         serializers = []
-#         for szr1, szr2 in zip(self.serializers, other.serializers, strict=True):
-#             serializers.append(szr1.combine(szr2))
-#         return InheritableCombineSequence(self.handler, serializers)
-#
-#
-# class HierarchicalHandler:
-#     def __init__(self):
-#         self.sequences: dict[type, InheritableCombineSequence] = {}
-#         self.serializers: dict[type, Base] = {}
-#
-#     def add(self,
-#             klass: type[object],
-#             *serializers: Combinable,
-#             ):
+class NameTuple(Base):
+    def __init__(self, *names: str, strict: bool = False):
+        self.names = names
+        self.strict = strict
+
+    def analyze(self, data):
+        return dict(zip(self.names, data, strict=self.strict))
+
+    def compile(self, value, data=None):
+        if self.strict and len(data) != len(self.names):
+            raise ValueError()  # todo
+        return tuple(data[name] for name in self.names)
 
 
 def extract_unused(data: dict, keys, insert_unused=False, unused_key=Ellipsis):
@@ -618,30 +454,52 @@ class WrapKeys(Base):
         ))  # if key or name presents in other, the info will be overriden.
         return WrapKeys(*infos, *other.infos)
 
+    def __or__(self, other: 'WrapKeys'):
+        return self.combine(other)
 
-@frozen
+
+@frozen(init=False)
 class FieldInfo:
     name: str | EllipsisType
-    serializer: Base | None | Literal[True] = None
-    keys: tuple[str, ...] | None = None
+    serializer: Base = None
+    keys: tuple[str, ...] = None
     optimize_name: bool = True
     always_compile: bool = False
+    compile_takes_value: bool = False
 
-    if TYPE_CHECKING:
-        def __init__(self,
-                     name: str | EllipsisType = None,
-                     serializer: Base | None | Literal[True] = None,
-                     keys: tuple[str, ...] | None = None,
-                     optimize_name: bool = True,
-                     always_compile: bool = False
-                     ):
-            pass
-
-    def __attrs_post_init__(self):
-        if self.serializer is True:
-            object.__setattr__(self, 'serializer', Key(self.name))
-        if self.keys is None:
-            object.__setattr__(self, 'keys', tuple(self.serializer.get_keys()))
+    def __init__(self,
+                 name: str | EllipsisType = None,
+                 serializer: Base | str | None | Literal[True] = None,
+                 keys: tuple[str, ...] | Literal[True] | None = True,
+                 optimize_name: bool = True,
+                 always_compile: bool = False,
+                 compile_takes_value: bool = False,
+                 *,
+                 additional_serializer: Base | None = None
+                 ):
+        if serializer is True:
+            serializer = Key(name)
+        elif isinstance(serializer, str):
+            serializer = Key(serializer)
+        if isinstance(serializer, Base):
+            if keys is True:
+                keys = tuple(serializer.get_keys())
+                if not keys:
+                    serializer = Key(name) >> serializer
+                    keys = (name,)
+            elif keys is None:
+                keys = tuple(serializer.get_keys())
+        if additional_serializer is not None:
+            serializer = serializer >> additional_serializer
+        if not isinstance(serializer, Base) or not isinstance(keys, tuple):
+            raise TypeError()  # todo
+        _setattr = partial(object.__setattr__, self)
+        _setattr('name', name)
+        _setattr('serializer', serializer)
+        _setattr('keys', keys)
+        _setattr('optimize_name', optimize_name)
+        _setattr('always_compile', always_compile)
+        _setattr('compile_takes_value', compile_takes_value)
 
 
 class MultiField(Base):
@@ -700,9 +558,13 @@ class MultiField(Base):
             used_fields[self.from_name[name]] = None
 
         for info in used_fields:
-            if info.serializer is not None:
+            if info.serializer is None:
+                continue
+            if info.compile_takes_value:
+                val = value
+            else:
                 val = value.get(info.name, None)
-                info.serializer.compile(val, data)
+            info.serializer.compile(val, data)
 
         if Ellipsis in data:
             data.update(data.pop(Ellipsis))
@@ -714,6 +576,9 @@ class MultiField(Base):
             (info.name is None or info.name not in other.from_name)
         ))  # if name presents in other, the info will be overriden.
         return MultiField(*infos, *other.infos)
+
+    def __or__(self, other: 'MultiField'):
+        return self.combine(other)
 
     def get_keys(self) -> Iterator[str]:
         for info in self.infos:
@@ -738,6 +603,24 @@ class ToClass(Base):
         if self.has_dict:
             return value.__dict__
         return {name: getattr(value, name) for name in value.__class__.__slots__}
+
+
+class ToAttrs(Base):
+    def __init__(self, klass: type[object], *slots: str):
+        self.klass = klass
+        has_dict = '__dict__' in dir(klass)
+        if has_dict or not hasattr(klass, '__slots__'):
+            raise TypeError()  # todo
+        if not slots:
+            self.slots = tuple(slot for slot in klass.__slots__ if slot != '__weakref__')
+        else:
+            self.slots = slots
+
+    def analyze(self, data):
+        return self.klass(*data)
+
+    def compile(self, value, data=None):
+        return tuple(getattr(value, name) for name in self.slots)
 
 
 class ToEnum(Base):
@@ -771,3 +654,22 @@ class SerializingFamily:
     @classmethod
     def get(cls, name) -> 'SerializingFamily':
         return cls._all[name]
+
+
+class SplitDict(Base):
+    def __init__(self,
+                 serializer: Base,
+                 separator: str
+                 ):
+        self.serializer = serializer
+        self.separator = separator
+
+    def analyze(self, data: str):
+        return pairs_to_dict(self.serializer.analyze(val) for val in data.split(self.separator))
+
+    def compile(self, value, data=None):
+        return self.separator.join(self.serializer.compile(val) for val in dict_to_pairs(value))
+
+
+def MultiKey(*keys: str):
+    return Tuple(*(Key(k) if isinstance(k, str) else k for k in keys))

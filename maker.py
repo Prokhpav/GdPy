@@ -23,6 +23,9 @@ class _MakerWrapperItem[T]:
         kwargs = self.maker.default_kwargs | self.default_kwargs | kwargs
         return self.maker.klass(**kwargs)
 
+    def __getattr__(self, name: str):
+        return self.default_kwargs[name]
+
 
 class Maker[T]:
     def __init__(self, klass: type[T]):
@@ -31,10 +34,7 @@ class Maker[T]:
         self.default_kwargs = {}
 
     def args_to_kwargs(self, args, kwargs):
-        x = args_to_kwargs(self.klass.__init__, args, kwargs)
-        if 'self' in x:
-            pass
-        return x
+        return args_to_kwargs(self.klass.__init__, args, kwargs)
 
     @property
     def setup(self) -> type[T]:

@@ -173,9 +173,9 @@ special_ids = bidict({
     1817: 'Pickup',  # +
     1611: 'Count',  # +
     1811: 'InstantCount',  # +
-    3619: 'ItemEdit',
-    3620: 'ItemCompare',
-    3641: 'ItemPersistent',
+    3619: 'ItemEdit',  # +
+    3620: 'ItemCompare',  # +
+    3641: 'ItemPersistent',  # +
     1615: 'CounterLabel',  # +
     # ----- - timer
     3614: 'Timer',
@@ -276,4 +276,25 @@ special_ids = bidict({
     2903: 'Gradient',
     3608: 'SpawnParticles',
     3618: 'Reset',  # +
+    914:  'Text',
+    1931: 'End2',  # todo why there's a second end?
 })
+
+legacy_ids = bidict({
+    34: 'LegacyStartPos',
+
+    221: 'LegacyColor1',  # converts into id 899
+    717: 'LegacyColor2',  # converts into id 899
+    718: 'LegacyColor3',  # converts into id 899
+    743: 'LegacyColor4',  # converts into id 899
+
+    29: 'LegacyColorBG',
+    30: 'LegacyColorG1',
+    900: 'LegacyColorG2',
+    104: 'LegacyColorLineBlending',  # converts into id 915
+    915: 'LegacyColorLine',
+    105: 'LegacyColorObj',
+    744: 'LegacyColor3DL',
+})
+
+special_ids.update(legacy_ids)

@@ -1,0 +1,5 @@
+There are some minor gd bugs I found.
+
+- in ItemCompare menu wrong title for 5-th checkbox for ItemID2 - 2-nd Time instead of Att
+- MoveBy, when lock the game doesn't save mod=0 and sets to default mod=1. No auto-replacing to not lock
+- CounterLabel: it displays timer, updates displayed value not immediately when player respawns. You can see it if it is not persistent

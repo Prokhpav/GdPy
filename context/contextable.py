@@ -23,7 +23,7 @@ class Contextable(SimpleContext):
             assert self.__class__._context_stack.pop() is self
 
     @classmethod
-    def C(cls: Type[T], default: T = _Missed) -> T:
+    def C(cls: Type[T], default: T | None = _Missed) -> T | None:
         """ Current instance in context """
         if cls._context_stack:
             return cls._context_stack[-1]

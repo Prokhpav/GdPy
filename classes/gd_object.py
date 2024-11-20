@@ -5,7 +5,7 @@ from python.attrs_wrap import define_gd, field
 from ignore_default import IgnoreDefault
 from data.special_ids import special_ids
 from .enums import *
-from .gd_id import Group, Item, Block
+from .gd_id import Group, Item, Block, Timer
 
 
 @define_gd
@@ -54,7 +54,7 @@ class Trigger(GdObjectBase):
 
 @define_gd
 class TargetTrigger(Trigger):
-    target: Group = field(factory=Group)
+    target: Group = Group.Empty
 
 
 @define_gd
@@ -80,7 +80,7 @@ class Stop(TargetTrigger, SpecialId):
 
 @define_gd
 class Pickup(Trigger, SpecialId):
-    item: Item = field(factory=Item)
+    item: Item = Item.Empty
     count: int = 0
     modifier: float = 1.
     mode: PickupMode = PickupMode.Add
@@ -88,7 +88,7 @@ class Pickup(Trigger, SpecialId):
 
 @define_gd
 class Count(TargetTrigger, SpecialId):
-    item: Item = field(factory=Item)
+    item: Item = Item.Empty
     count: int = 0
     activate: bool = False
     multi_activate: bool = False
@@ -96,7 +96,7 @@ class Count(TargetTrigger, SpecialId):
 
 @define_gd
 class InstantCount(TargetTrigger, SpecialId):
-    item: Item = field(factory=Item)
+    item: Item = Item.Empty
     count: int = 0
     comparison: Comparison = Comparison.Equals
     activate: bool = False
@@ -104,7 +104,7 @@ class InstantCount(TargetTrigger, SpecialId):
 
 @define_gd
 class CounterLabel(GdObjectBase, SpecialId):
-    item: Item = field(factory=Item)
+    item: Item = Item.Empty
     text_align: TextAlign = TextAlign.Center
     seconds_only: bool = False
     as_timer: bool = False
@@ -121,8 +121,8 @@ class Touch(TargetTrigger, SpecialId):
 
 @define_gd  # do not use
 class CollisionBase(TargetTrigger):
-    block_a: Block = field(factory=Block)
-    block_b: Block = field(factory=Block)
+    block_a: Block = Block.Empty
+    block_b: Block = Block.Empty
     player_collision: CollisionPlayer = CollisionPlayer.No  # replace block_a as player or collision between players
 
 
@@ -134,18 +134,18 @@ class Collision(CollisionBase, SpecialId):
 
 @define_gd
 class InstantCollision(CollisionBase, SpecialId):
-    target_false: Group = field(factory=Group)
+    target_false: Group = Group.Empty
 
 
 @define_gd
 class CollisionState(TargetTrigger, SpecialId):  # player collision area
     triggered: Triggered = Triggered.TouchMulti
-    target_exit: Group = field(factory=Group)
+    target_exit: Group = Group.Empty
 
 
 @define_gd
 class CollisionBlock(GdObjectBase, SpecialId):
-    block: Block = field(factory=Block)
+    block: Block = Block.Empty
     dynamic: bool = False
 
 
@@ -186,35 +186,106 @@ class MoveBy(Move):
 
 @define_gd
 class MoveTo(Move):
-    center: Group = field(factory=Group)
-    target_pos: Group = field(factory=Group)
+    center: Group = Group.Empty
+    target_pos: Group = Group.Empty
+    target_player: TargetPlayer = TargetPlayer.No
+    mode: XYOnly = XYOnly.Both
+    dynamic: bool = False
 
 
 @define_gd
 class MoveAt(Move):
-    center: Group = field(factory=Group)
-    target_pos: Group = field(factory=Group)
+    center: Group = Group.Empty
+    target_pos: Group = Group.Empty
+    target_player: TargetPlayer = TargetPlayer.No
     distance: int = 0  # 30 units per cell
+    dynamic: bool = False
 
 
 @define_gd
 class Rotate(EasingTrigger, SpecialId):
-    center: Group = field(factory=Group)
+    center: Group = Group.Empty
     degrees: float = 0.
     lock_object_rotation: bool = False
-    dynamic_rotation: bool = False
 
 
-# @define_gd
-# class RotateBy(Rotate):
-#     pass
-#
-#
-# @define_gd
-# class RotateAt(Rotate):
-#     pass
-#
-#
-# @define_gd
-# class RotateTo(Rotate):
-#     pass
+@define_gd
+class RotateBy(Rotate):
+    pass
+
+
+@define_gd
+class RotateAim(Rotate):
+    dynamic: bool = False
+
+
+@define_gd
+class RotateAs(Rotate):
+    dynamic: bool = False
+
+
+@define_gd
+class Text(GdObjectBase, SpecialId):
+    text: str = 'a'
+    kerning: int = 0
+
+
+@define_gd
+class ItemEdit(Trigger, SpecialId):
+    """
+    Points -> Item(-1)
+    """
+    a: Item | Timer = Item.Empty
+    b: Item | Timer = Item.Empty
+    mod: float = 1.
+    result: Item | Timer = Item.Empty
+
+    operator_a_b: ItemOperator = ItemOperator.Add  # Add, Sub, Mul, Div
+    operator_ab_mod: ItemOperator = ItemOperator.Mul  # Mul, Div
+    rounding_abm: RoundingFunc = RoundingFunc.No
+    sign_abm: SignFunc = SignFunc.No
+    operator_c_abm: ItemOperator = ItemOperator.Override  # all 5 operators
+    rounding_cabm: RoundingFunc = RoundingFunc.No
+    sign_cabm: SignFunc = SignFunc.No
+
+    """
+    def __pseudocode(self):
+        has_a = ...
+        has_b = ...
+        if has_a and has_b:
+            abm = '(a <op_a_b> b) <op_ab_mod> mod'
+        elif has_a:
+            abm = 'a <op_ab_mod> mod'
+        elif has_b:
+            abm = 'b <op_ab_mod> mod'
+        else:
+            abm = 'mod'
+        abm = 'sign_abm(round_abm(abm))'
+        cabm = 'c <op_c_abm> abm'
+        result = 'sign_cabm(round_cabm(cabm))'
+    """
+
+
+@define_gd
+class ItemCompare(TargetTrigger, SpecialId):
+    target_false: Group = Group.Empty
+    a: Item | Timer = Item.Empty
+    b: Item | Timer = Item.Empty
+    mod_a: float = 1.
+    mod_b: float = 1.
+    operator_a: ItemOperator = ItemOperator.Mul
+    operator_b: ItemOperator = ItemOperator.Mul
+    rounding_a: RoundingFunc = RoundingFunc.No
+    rounding_b: RoundingFunc = RoundingFunc.No
+    sign_a: SignFunc = SignFunc.No
+    sign_b: SignFunc = SignFunc.No
+    comparison: ItemComparison = ItemComparison.Equals
+    tolerance: float = 0.
+
+
+@define_gd
+class ItemPersistent(Trigger, SpecialId):
+    target: Item | Timer = Item.Empty
+    persistent: bool = False
+    target_all: bool = False
+    reset: bool = False

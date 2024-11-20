@@ -1,17 +1,17 @@
 # thanks https://github.com/Boris-Filin/NeditGD
 
 NAME_TO_ID = {
-    'id': 1,
-    'x': 2,
-    'y': 3,
-    'horizontal_flip': 4,
-    'vertical_flip': 5,
-    'rotation': 6,
+    'id': 1,  # +
+    'x': 2,  # +
+    'y': 3,  # +
+    'horizontal_flip': 4,  # +
+    'vertical_flip': 5,  # +
+    'rotation': 6,  # +
     'trigger_red': 7,
     'trigger_green': 8,
     'trigger_blue': 9,
-    'duration': 10,
-    'touch_triggered': 11,
+    'duration': 10,  # +
+    'touch_triggered': 11,  # +
     'secret_coin_id': 12,
     'portal_checked': 13,
     'tint_ground': 14,
@@ -123,7 +123,7 @@ NAME_TO_ID = {
     'follow_camera_x': 141,
     'follow_camera_y': 142,
     'follow_camera_x_mod': 143,
-    'follow_camera_y_mod': 144,
+    'follow_camera_y_mod': 144,  # caution, if = 0.0, restores to default 1.0 after reloading
     'particle_setup': 145,
     'use_obj_color': 146,
     'gravity': 148,
@@ -242,10 +242,12 @@ additional = {
     'sfx_unique_id': 416,
     'sfx_group': 455,
     # Used in PlayLayer::updateVisibility during LevelEditorLayer::onPlaytest as index of some Level
-    # When you 'Edit object' hsv the game tries to find similar cached hsv and stored its index in object.
+    # When you 'Edit object' hsv the game tries to find similar cached hsv and stores its index in object.
     # This is probably for memory optimization reasons. Base and Detail indexes aren't combinable.
     'hsv_base_index': 155,
     'hsv_detail_index': 156,
+
+    'pulse_nonstatic_hsv': 210,
 
     'spawn_duration_variation': 556,  # delay += variation * random.uniform(-1, 1)
     'reset_remap': 581,
@@ -269,6 +271,11 @@ additional = {
     'rotation_max_x': 517,
     'rotation_min_y': 518,
     'rotation_max_y': 519,
+
+    'rotation_dynamic_easing': 403,  # in aim mode rotation speed is proportional to delta angle divided by easing. For easing=100 it takes ~2.9s to rotate from 180 to 90 degrees
+
+    'text_kerning': 488,
+    'move_small_steps': 393,
 }
 
 del NAME_TO_ID['_pt']
